@@ -342,7 +342,6 @@ function showStates(states) {
       let startDay = state.startDay;
       let stateAge = state.stateAgeDays;
       let stateItem = GetStateItemContent(stateNum, startDay, stateAge);
-      stateItem.style.visibility = "hidden";
       containerBody.appendChild(stateItem);
     }
   }
@@ -383,7 +382,6 @@ function isInContainerView(elm, container, partial = true) {
   const containerRect = container.getBoundingClientRect();
 
   if (partial) {
-    // Any intersection between rect and containerRect
     const verticallyVisible =
       rect.bottom > containerRect.top && rect.top < containerRect.bottom;
     const horizontallyVisible =
@@ -391,7 +389,6 @@ function isInContainerView(elm, container, partial = true) {
 
     return verticallyVisible && horizontallyVisible;
   } else {
-    // Fully inside the container
     const verticallyVisible =
       rect.top >= containerRect.top && rect.bottom <= containerRect.bottom;
     const horizontallyVisible =
