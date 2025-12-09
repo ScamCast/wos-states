@@ -1,5 +1,3 @@
-document.addEventListener("load", function() {
-
 let gen_data = {
     "1": {
         "day": 0,
@@ -410,4 +408,3 @@ function isInContainerView(elm, container, partial = true) {
 //   });
 // })
 
-});
