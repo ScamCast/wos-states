@@ -1,4 +1,4 @@
-document.addEventListener("DOMContentLoaded", function() {
+document.addEventListener("load", function() {
 
 let gen_data = {
     "1": {
