@@ -1,3 +1,3 @@
 # WoS States
 
-An interactive Whiteout Survival timeline showing state ages, current hero generations, and upcoming generation unlocks.
+Explore Whiteout Survival state ages, hero generations, upcoming unlocks, and charts of state openings over time.

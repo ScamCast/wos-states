@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#081425">
-    <meta name="description" content="Compare Whiteout Survival states, hero progression, and hero generations on one timeline.">
+    <meta name="description" content="Explore Whiteout Survival state ages, hero generations, and charts of state openings over time.">
     <title>State Timeline · Whiteout Survival</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='8'%20fill='%23193655'/%3E%3Cpath%20d='M32%2011v42M14%2022l36%2020M14%2042l36-20'%20fill='none'%20stroke='%23bcd8f1'%20stroke-width='4'%20stroke-linecap='round'/%3E%3C/svg%3E">
     <link rel="stylesheet" href="style.css">
@@ -21,6 +21,7 @@
       <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
       <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
       <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+      <symbol id="icon-chart" viewBox="0 0 24 24"><path d="M4 3v17h17M8 15v-4M13 15V6M18 15V9"/></symbol>
     </svg>
     <main class="app">
       <header class="app-header">
@@ -35,6 +36,11 @@
         </div>
       </header>
 
+      <nav class="view-tabs" role="tablist" aria-label="Site view">
+        <button id="timelineTab" type="button" role="tab" aria-selected="true" aria-controls="timelineView" data-view="timeline"><svg class="icon" aria-hidden="true"><use href="#icon-calendar"/></svg>Timeline</button>
+        <button id="chartsTab" type="button" role="tab" aria-selected="false" aria-controls="chartsView" data-view="charts" tabindex="-1" disabled><svg class="icon" aria-hidden="true"><use href="#icon-chart"/></svg>Charts</button>
+      </nav>
+      <section id="timelineView" class="timeline-view" role="tabpanel" aria-labelledby="timelineTab">
       <section class="controls" aria-label="Timeline controls">
         <fieldset id="timelineControls" disabled>
           <div class="control-main">
@@ -94,6 +100,53 @@
           </div>
         </div>
         <footer class="chart-footer"><span id="viewRange">Opening the timeline…</span><span class="navigation-hint">Drag to explore<span> · </span>Tap a generation for its heroes</span></footer>
+      </section>
+      </section>
+
+      <section id="chartsView" class="charts-view" role="tabpanel" aria-labelledby="chartsTab" hidden>
+        <div class="insights-heading"><div><p class="eyebrow">THE BIG PICTURE</p><h2>State openings &amp; age</h2></div><span class="utc-badge">ALL DATES IN UTC</span></div>
+        <p class="archive-note">These charts use known opening dates. The archive is incomplete: a zero means no recorded openings, not necessarily that no states opened.</p>
+        <fieldset id="chartControls" class="chart-controls" disabled>
+          <label>Group openings by<select id="chartPeriod"><option value="week">Week</option><option value="month" selected>Month</option><option value="year">Year</option></select></label>
+          <label>Include<select id="chartScope"><option value="all">All known states</option><option value="selection">Timeline selection</option></select></label>
+          <label>Opened from<input id="chartFrom" type="date"></label>
+          <label>Opened through<input id="chartTo" type="date"></label>
+          <div class="chart-presets" role="group" aria-label="Opening date range"><button type="button" class="button button-subtle" data-chart-range="all">All time</button><button type="button" class="button button-subtle" data-chart-range="year">This year</button><button type="button" class="button button-subtle" data-chart-range="recent">Last 90 days</button></div>
+        </fieldset>
+        <p id="chartRangeError" class="filter-feedback is-error" role="alert" hidden></p>
+        <div id="chartStats" class="chart-stats">
+          <article class="stat-card"><span>Recorded openings</span><strong id="chartTotal">—</strong><small id="chartTotalDetail">In the selected range</small></article>
+          <article class="stat-card"><span id="chartPeakLabel">Busiest month</span><strong id="chartPeak">—</strong><small id="chartPeakDetail">Recorded openings</small></article>
+          <article class="stat-card"><span>Median state age</span><strong id="chartMedian">—</strong><small>Completed days since opening</small></article>
+          <article class="stat-card"><span>Newest opening</span><strong id="chartNewest">—</strong><small id="chartNewestDetail">In the selected range</small></article>
+        </div>
+        <div id="chartGrid" class="insight-grid">
+          <article class="insight-card">
+            <div class="insight-card-heading"><h3>When states opened</h3><p id="openingsDescription">Recorded openings per month.</p></div>
+            <canvas id="openingsCanvas" class="insight-canvas" tabindex="0" role="img" aria-label="State opening counts" aria-describedby="openingsDescription openingsReadout">Opening counts are available in the values table below.</canvas>
+            <p id="openingsReadout" class="chart-readout" role="status"></p>
+            <details class="chart-values"><summary>View exact values</summary><div id="openingsTable" class="chart-table-wrap"></div><div class="chart-pagination"><button type="button" data-table="openings" data-page="-1" aria-label="Previous opening counts">Previous</button><span id="openingsPage"></span><button type="button" data-table="openings" data-page="1" aria-label="Next opening counts">Next</button></div></details>
+          </article>
+          <article class="insight-card">
+            <div class="insight-card-heading"><h3>Cumulative openings</h3><p id="growthDescription">Running total within the selected opening-date range.</p></div>
+            <canvas id="growthCanvas" class="insight-canvas" tabindex="0" role="img" aria-label="Cumulative recorded state openings" aria-describedby="growthDescription growthReadout">Cumulative counts are available in the values table below.</canvas>
+            <p id="growthReadout" class="chart-readout" role="status"></p>
+            <details class="chart-values"><summary>View exact values</summary><div id="growthTable" class="chart-table-wrap"></div><div class="chart-pagination"><button type="button" data-table="growth" data-page="-1" aria-label="Previous cumulative counts">Previous</button><span id="growthPage"></span><button type="button" data-table="growth" data-page="1" aria-label="Next cumulative counts">Next</button></div></details>
+          </article>
+          <article class="insight-card">
+            <div class="insight-card-heading"><h3>How old are the states?</h3><p id="agesDescription">Current age in completed days since actual opening.</p></div>
+            <canvas id="agesCanvas" class="insight-canvas" tabindex="0" role="img" aria-label="Distribution of current state ages" aria-describedby="agesDescription agesReadout">State age counts are available in the values table below.</canvas>
+            <p id="agesReadout" class="chart-readout" role="status"></p>
+            <details class="chart-values"><summary>View exact values</summary><div id="agesTable" class="chart-table-wrap"></div><div class="chart-pagination"><button type="button" data-table="ages" data-page="-1" aria-label="Previous age groups">Previous</button><span id="agesPage"></span><button type="button" data-table="ages" data-page="1" aria-label="Next age groups">Next</button></div></details>
+          </article>
+          <article class="insight-card">
+            <div class="insight-card-heading"><h3>Current hero generations</h3><p id="generationsDescription">Hero progression today for states in the selected range.</p></div>
+            <canvas id="generationsCanvas" class="insight-canvas" tabindex="0" role="img" aria-label="Current hero generation distribution" aria-describedby="generationsDescription generationsReadout">Generation counts are available in the values table below.</canvas>
+            <p id="generationsReadout" class="chart-readout" role="status"></p>
+            <details class="chart-values"><summary>View exact values</summary><div id="generationsTable" class="chart-table-wrap"></div><div class="chart-pagination"><button type="button" data-table="generations" data-page="-1" aria-label="Previous generation counts">Previous</button><span id="generationsPage"></span><button type="button" data-table="generations" data-page="1" aria-label="Next generation counts">Next</button></div></details>
+          </article>
+        </div>
+        <p class="charts-footnote">Weeks start on Monday. First and last periods may be partial. Hover, tap, or use the arrow keys on a chart to inspect its values.</p>
       </section>
       <footer class="app-footer"><span id="dataSummary">State opening dates from the game</span><span>Progression days follow the hero-release schedule.</span></footer>
     </main>

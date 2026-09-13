@@ -16,6 +16,16 @@ const shortDateFormat = new Intl.DateTimeFormat('en-GB', { day: 'numeric', month
 const palette = ['149 182 219', '173 192 222', '133 173 210', '164 175 213'];
 let preferences = {};
 try { preferences = JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; } catch {}
+const preferredView = preferences.view === 'charts' ? 'charts' : 'timeline';
+let activeView = 'timeline';
+let chartPeriod = ['week', 'month', 'year'].includes(preferences.chartPeriod) ? preferences.chartPeriod : 'month';
+let chartScope = preferences.chartScope === 'selection' ? 'selection' : 'all';
+let timelinePosition = { left: 0, top: 0 };
+let chartsFrame = 0;
+let chartsWidth = 0;
+let chartsSignature = '';
+const chartModels = new Map();
+const tablePages = new Map();
 let mode = ['progression', 'battlefield'].includes(preferences.mode) ? 'progression' : 'timeline';
 let dayWidth = Number.isFinite(preferences.dayWidth) ? Math.max(2, Math.min(36, Math.round(preferences.dayWidth))) : 0;
 let query = typeof preferences.query === 'string' ? preferences.query.slice(0, 500) : '';
@@ -75,7 +85,7 @@ function referenceDay() { return mode === 'timeline' ? today : referenceState()?
 
 function savePreferences() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, dayWidth, query, onlyPinned, focusId, pinned: [...pinnedIds] }));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, dayWidth, query, onlyPinned, focusId, pinned: [...pinnedIds], view: activeView, chartPeriod, chartScope }));
   } catch {}
 }
 
@@ -203,7 +213,7 @@ function newestQuery() {
 }
 
 function updateDimensions() {
-  if (!loaded) return;
+  if (!loaded || activeView !== 'timeline') return;
   const styles = getComputedStyle(viewport);
   labelWidth = parseFloat(styles.getPropertyValue('--label-width'));
   headerHeight = parseFloat(styles.getPropertyValue('--header-height'));
@@ -246,7 +256,7 @@ function changeZoom(direction) {
 }
 
 function queueRender() {
-  if (loaded && !frame) frame = requestAnimationFrame(render);
+  if (loaded && activeView === 'timeline' && !frame) frame = requestAnimationFrame(render);
 }
 
 function createRow(state) {
@@ -363,6 +373,7 @@ function paintRuler(left) {
 
 function render() {
   frame = 0;
+  if (activeView !== 'timeline') return;
   const left = viewport.scrollLeft;
   const active = document.activeElement;
   const focusedRow = active?.closest?.('.state-wrapper');
@@ -518,7 +529,7 @@ dialog.addEventListener('click', event => {
 });
 dialog.addEventListener('close', () => { if (dialogTrigger?.isConnected) dialogTrigger.focus({ preventScroll: true }); else viewport.focus({ preventScroll: true }); });
 const resizeObserver = new ResizeObserver(() => {
-  if (!loaded) return;
+  if (!loaded || activeView !== 'timeline') return;
   rebuildStateList();
   rulerKey = '';
   queueRender();
@@ -531,8 +542,9 @@ function refreshClock() {
   if (dialog.open) showGeneration(dialogState, dialogGeneration, dialogTrigger);
   updateDimensions();
   queueRender();
+  queueCharts();
 }
-setInterval(refreshClock, 60000);
+setInterval(() => { refreshClock(); queueCharts(); }, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshClock(); });
 
 async function initialize() {
@@ -565,6 +577,8 @@ async function initialize() {
     if (!applyFilter(query)) applyFilter('');
     updateDimensions();
     jumpToToday();
+    initializeCharts();
+    setView(preferredView);
   } catch (error) {
     loaded = false;
     surface.hidden = true;
@@ -578,5 +592,360 @@ async function initialize() {
     console.error(error);
   } finally { loading = false; }
 }
+
+function setView(view) {
+  if (!loaded || !['timeline', 'charts'].includes(view)) return;
+  const previous = activeView;
+  if (previous === 'timeline' && view !== previous) timelinePosition = { left: viewport.scrollLeft, top: viewport.scrollTop };
+  activeView = view;
+  tooltip.hidden = true;
+  $('timelineView').hidden = view !== 'timeline';
+  $('chartsView').hidden = view !== 'charts';
+  document.querySelector('h1').lastChild.textContent = view === 'charts' ? 'Charts' : 'Timeline';
+  document.querySelector('.intro').textContent = view === 'charts' ? 'Explore state openings, ages, and hero generations.' : 'Compare state progress and see what unlocks next.';
+  document.title = view === 'charts' ? 'State Charts · Whiteout Survival' : 'State Timeline · Whiteout Survival';
+  for (const tab of document.querySelectorAll('[data-view]')) {
+    tab.setAttribute('aria-selected', String(tab.dataset.view === view));
+    tab.tabIndex = tab.dataset.view === view ? 0 : -1;
+  }
+  if (view === 'timeline') {
+    rebuildStateList();
+    if (previous !== view) {
+      viewport.scrollLeft = timelinePosition.left;
+      viewport.scrollTop = timelinePosition.top;
+    }
+    queueRender();
+  } else queueCharts();
+  savePreferences();
+}
+
+function dateValue(timestamp) { return new Date(timestamp).toISOString().slice(0, 10); }
+
+function periodStart(timestamp) {
+  const date = new Date(timestamp);
+  if (chartPeriod === 'year') return Date.UTC(date.getUTCFullYear(), 0, 1);
+  if (chartPeriod === 'month') return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1);
+  return Math.floor(timestamp / DAY) * DAY - ((date.getUTCDay() + 6) % 7) * DAY;
+}
+
+function nextPeriod(timestamp) {
+  const date = new Date(timestamp);
+  if (chartPeriod === 'year') return Date.UTC(date.getUTCFullYear() + 1, 0, 1);
+  if (chartPeriod === 'month') return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1);
+  return timestamp + 7 * DAY;
+}
+
+function periodLabel(timestamp) {
+  if (chartPeriod === 'year') return String(new Date(timestamp).getUTCFullYear());
+  if (chartPeriod === 'week') return shortDateFormat.format(new Date(timestamp));
+  return new Intl.DateTimeFormat('en-GB', { month: 'short', year: 'numeric', timeZone: 'UTC' }).format(new Date(timestamp));
+}
+
+function queueCharts() {
+  if (!loaded || activeView !== 'charts' || chartsFrame) return;
+  chartsFrame = requestAnimationFrame(() => {
+    chartsFrame = 0;
+    if (activeView === 'charts') renderCharts();
+  });
+}
+
+function initializeCharts() {
+  const first = Math.min(...states.map(state => state.openedDay));
+  const last = Math.floor(now / DAY) * DAY;
+  $('chartPeriod').value = chartPeriod;
+  $('chartScope').value = chartScope;
+  for (const input of [$('chartFrom'), $('chartTo')]) {
+    input.min = dateValue(first);
+    input.max = dateValue(last);
+  }
+  $('chartFrom').value = dateValue(first);
+  $('chartTo').value = dateValue(last);
+  $('chartControls').disabled = false;
+  $('chartsTab').disabled = false;
+}
+
+function renderCharts() {
+  refreshClock();
+  const chartNow = Date.now();
+  const first = Math.min(...states.map(state => state.openedDay));
+  const last = Math.floor(chartNow / DAY) * DAY;
+  if ($('chartTo').value === $('chartTo').max) $('chartTo').value = dateValue(last);
+  $('chartFrom').max = dateValue(last);
+  $('chartTo').max = dateValue(last);
+  const from = $('chartFrom').value ? Date.parse($('chartFrom').value + 'T00:00:00Z') : first;
+  const to = $('chartTo').value ? Date.parse($('chartTo').value + 'T00:00:00Z') : last;
+  const invalid = !Number.isFinite(from) || !Number.isFinite(to) || from > to || from < first || to > last;
+  $('chartRangeError').hidden = !invalid;
+  $('chartStats').hidden = invalid;
+  $('chartGrid').hidden = invalid;
+  if (invalid) {
+    $('chartRangeError').textContent = `Choose an opening-date range between ${formatDate(first)} and ${formatDate(last)}, with the start before the end.`;
+    return;
+  }
+  const selection = [...stickyStates, ...regularStates];
+  $('chartScope').querySelector('[value="selection"]').textContent = `Timeline selection (${formatNumber(selection.length)})`;
+  const source = chartScope === 'selection' ? selection : states;
+  const included = source.filter(state => state.opened >= from && state.opened < to + DAY && state.opened <= chartNow);
+  const signature = `${chartPeriod}|${chartScope}|${from}|${to}|${Math.floor(now / DAY)}|${source.map(state => state.id).join(',')}`;
+  if (signature !== chartsSignature) {
+    tablePages.clear();
+    chartModels.clear();
+    chartsSignature = signature;
+  }
+  const counts = new Map();
+  for (const state of included) {
+    const key = periodStart(state.opened);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const periods = [];
+  let running = 0;
+  for (let start = periodStart(from); start <= to; start = nextPeriod(start)) {
+    const end = nextPeriod(start);
+    const partial = start < from || end > Math.min(to + DAY, chartNow);
+    const count = counts.get(start) || 0;
+    running += count;
+    periods.push({ key: String(start), label: periodLabel(start), fullLabel: `${formatDate(Math.max(start, from))} – ${formatDate(Math.min(end - DAY, to))}${partial ? ' (partial)' : ''}`, value: count, cumulative: running });
+  }
+  const peak = periods.reduce((best, period) => period.value > best.value ? period : best, periods[0]);
+  const ages = included.map(state => Math.max(0, Math.floor((chartNow - state.opened) / DAY))).sort((a, b) => a - b);
+  const middle = Math.floor(ages.length / 2);
+  const median = ages.length ? ages.length % 2 ? ages[middle] : (ages[middle - 1] + ages[middle]) / 2 : null;
+  const newest = included.reduce((best, state) => !best || state.opened > best.opened ? state : best, null);
+  $('chartTotal').textContent = formatNumber(included.length);
+  $('chartTotalDetail').textContent = `Of ${formatNumber(source.length)} ${chartScope === 'selection' ? 'selected' : 'known'} states`;
+  $('chartPeakLabel').textContent = `Busiest ${chartPeriod}`;
+  $('chartPeak').textContent = included.length ? formatNumber(peak.value) : '—';
+  $('chartPeakDetail').textContent = included.length ? `${chartPeriod === 'week' ? 'Week of ' : ''}${peak.label} · recorded openings` : 'No recorded openings';
+  $('chartMedian').textContent = median === null ? '—' : `${formatNumber(median)} days`;
+  $('chartNewest').textContent = newest ? shortDateFormat.format(new Date(newest.opened)) : '—';
+  $('chartNewestDetail').textContent = newest ? `State ${newest.id} · ${new Date(newest.opened).getUTCFullYear()}` : 'No opening dates in range';
+  $('openingsDescription').textContent = `Recorded openings per ${chartPeriod}.${chartPeriod === 'week' ? ' Weeks start Monday.' : ''} Partial periods use only selected dates.`;
+  const ageRanges = [[0, 30], [31, 90], [91, 180], [181, 365], [366, 730], [731, 1095], [1096, Infinity]];
+  const ageRecords = ageRanges.map(([low, high]) => ({ key: String(low), label: high === Infinity ? '1,096+' : `${low}–${high}`, fullLabel: high === Infinity ? '1,096+ completed days' : `${formatNumber(low)}–${formatNumber(high)} completed days`, value: ages.filter(age => age >= low && age <= high).length }));
+  const genCounts = new Map();
+  for (const state of included) genCounts.set(state.generation.id, (genCounts.get(state.generation.id) || 0) + 1);
+  const genRecords = generations.map(generation => ({ key: String(generation.id), label: `G${generation.id}`, fullLabel: `Generation ${generation.id}`, value: genCounts.get(generation.id) || 0 }));
+  setChart('openings', 'bar', periods, included.length, 'Recorded openings');
+  setChart('growth', 'line', periods.map(period => ({ ...period, value: period.cumulative })), included.length, 'Cumulative recorded openings');
+  setChart('ages', 'bar', ageRecords, included.length, 'States by current age');
+  setChart('generations', 'bar', genRecords, included.length, 'States by current generation');
+  savePreferences();
+}
+
+function setChart(key, type, records, total, title) {
+  const previous = chartModels.get(key);
+  let selected = previous?.selected;
+  if (!Number.isInteger(selected) || selected >= records.length) {
+    selected = type === 'line' ? records.length - 1 : records.reduce((best, record, index) => record.value > records[best].value ? index : best, 0);
+  }
+  if (!total) selected = -1;
+  const model = { key, type, records, total, title, selected };
+  chartModels.set(key, model);
+  $(`${key}Canvas`).setAttribute('aria-label', `${title}. ${formatNumber(total)} states in the selected range. Exact values are in the table below.`);
+  drawChart(model);
+  updateChartReadout(model);
+  renderChartTable(model);
+}
+
+function chartScale(maximum) {
+  const raw = Math.max(1, maximum / 4);
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 5, 10].find(value => value * power >= raw) * power;
+  return { step, maximum: Math.max(step, Math.ceil(maximum / step) * step) };
+}
+
+function drawChart(model) {
+  const canvas = $(`${model.key}Canvas`);
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight;
+  if (!width || !height) return;
+  const density = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.round(width * density);
+  canvas.height = Math.round(height * density);
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(density, 0, 0, density, 0, 0);
+  const left = 53;
+  const right = width - 18;
+  const top = 16;
+  const bottom = height - 49;
+  model.plot = { left, right };
+  ctx.clearRect(0, 0, width, height);
+  ctx.font = '12px "Segoe UI", system-ui, sans-serif';
+  if (!model.total) {
+    ctx.fillStyle = '#bacadd';
+    ctx.textAlign = 'center';
+    ctx.fillText('No recorded states in this range.', width / 2, height / 2, width - 30);
+    return;
+  }
+  const scale = chartScale(Math.max(...model.records.map(record => record.value)));
+  const y = value => bottom - value / scale.maximum * (bottom - top);
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (let value = 0; value <= scale.maximum; value += scale.step) {
+    const position = y(value);
+    ctx.beginPath();
+    ctx.strokeStyle = '#294563';
+    ctx.lineWidth = 1;
+    ctx.moveTo(left, position);
+    ctx.lineTo(right, position);
+    ctx.stroke();
+    ctx.fillStyle = '#bacadd';
+    ctx.fillText(formatNumber(value), left - 9, position);
+  }
+  const slot = (right - left) / model.records.length;
+  const x = index => left + (index + .5) * slot;
+  if (model.type === 'line') {
+    ctx.beginPath();
+    ctx.moveTo(left, bottom);
+    model.records.forEach((record, index) => ctx.lineTo(x(index), y(record.value)));
+    ctx.lineTo(right, y(model.records.at(-1).value));
+    ctx.lineTo(right, bottom);
+    ctx.closePath();
+    ctx.fillStyle = '#729fce20';
+    ctx.fill();
+    ctx.beginPath();
+    model.records.forEach((record, index) => index ? ctx.lineTo(x(index), y(record.value)) : ctx.moveTo(x(index), y(record.value)));
+    ctx.strokeStyle = '#9dbddf';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+  } else {
+    const barWidth = Math.max(1, slot * .7);
+    model.records.forEach((record, index) => {
+      ctx.fillStyle = index === model.selected ? '#edaa82' : '#4b76a1';
+      if (record.value) ctx.fillRect(x(index) - barWidth / 2, y(record.value), barWidth, bottom - y(record.value));
+      else { ctx.fillStyle = '#6685a8'; ctx.fillRect(x(index) - Math.min(3, barWidth) / 2, bottom - 1, Math.min(3, barWidth), 2); }
+    });
+  }
+  if (model.selected >= 0) {
+    const selected = model.records[model.selected];
+    ctx.beginPath();
+    ctx.strokeStyle = '#edaa8280';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 4]);
+    ctx.moveTo(x(model.selected), top);
+    ctx.lineTo(x(model.selected), bottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (model.type === 'line') {
+      ctx.beginPath();
+      ctx.arc(x(model.selected), y(selected.value), 4, 0, Math.PI * 2);
+      ctx.fillStyle = '#edaa82';
+      ctx.fill();
+    }
+  }
+  const labelStep = Math.max(1, Math.ceil(model.records.length / Math.max(2, (right - left) / 83)));
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#bacadd';
+  let lastLabelRight = -Infinity;
+  for (let index = 0; index < model.records.length; index++) {
+    if (index % labelStep && index !== model.records.length - 1) continue;
+    const label = model.records[index].label;
+    const textWidth = ctx.measureText(label).width;
+    const position = Math.max(left + textWidth / 2, Math.min(right - textWidth / 2, x(index)));
+    if (position - textWidth / 2 < lastLabelRight + 9) continue;
+    ctx.fillText(label, position, bottom + 17);
+    lastLabelRight = position + textWidth / 2;
+  }
+}
+
+function updateChartReadout(model) {
+  const record = model.records[model.selected];
+  const readout = $(`${model.key}Readout`);
+  if (!record) { readout.textContent = 'No recorded states match these filters.'; return; }
+  const unit = model.key === 'growth' ? 'recorded in total' : model.key === 'openings' ? `recorded ${record.value === 1 ? 'opening' : 'openings'}` : record.value === 1 ? 'state' : 'states';
+  const share = ['ages', 'generations'].includes(model.key) ? ` · ${(record.value / model.total * 100).toFixed(1)}% of the selected states` : '';
+  readout.textContent = `${record.fullLabel} · ${formatNumber(record.value)} ${unit}${share}`;
+}
+
+function renderChartTable(model) {
+  const size = 12;
+  const lastPage = Math.max(0, Math.ceil(model.records.length / size) - 1);
+  const page = Math.max(0, Math.min(lastPage, tablePages.get(model.key) || 0));
+  tablePages.set(model.key, page);
+  const table = element('table');
+  table.append(element('caption', 'sr-only', model.title));
+  const head = element('thead');
+  const header = element('tr');
+  const labelHeading = element('th', '', ['ages', 'generations'].includes(model.key) ? 'Group' : 'Period · UTC');
+  labelHeading.scope = 'col';
+  const countHeading = element('th', '', model.key === 'growth' ? 'Running total' : 'Recorded states');
+  countHeading.scope = 'col';
+  header.append(labelHeading, countHeading);
+  head.append(header);
+  const body = element('tbody');
+  for (const record of model.records.slice(page * size, (page + 1) * size)) {
+    const row = element('tr');
+    row.append(element('td', '', record.fullLabel), element('td', '', formatNumber(record.value)));
+    body.append(row);
+  }
+  table.append(head, body);
+  $(`${model.key}Table`).replaceChildren(table);
+  $(`${model.key}Page`).textContent = `${page * size + 1}–${Math.min(model.records.length, (page + 1) * size)} of ${model.records.length}`;
+  for (const button of document.querySelectorAll(`[data-table="${model.key}"]`)) button.disabled = Number(button.dataset.page) < 0 ? page === 0 : page === lastPage;
+}
+
+function selectChartPoint(model, index) {
+  index = Math.max(0, Math.min(model.records.length - 1, index));
+  if (!model.total || index === model.selected) return;
+  model.selected = index;
+  drawChart(model);
+  updateChartReadout(model);
+}
+
+for (const key of ['openings', 'growth', 'ages', 'generations']) {
+  const canvas = $(`${key}Canvas`);
+  function inspect(event) {
+    const model = chartModels.get(key);
+    if (!model?.plot || !model.total) return;
+    const x = event.clientX - canvas.getBoundingClientRect().left;
+    if (x < model.plot.left || x > model.plot.right) return;
+    selectChartPoint(model, Math.floor((x - model.plot.left) / (model.plot.right - model.plot.left) * model.records.length));
+  }
+  canvas.addEventListener('pointermove', event => { if (event.pointerType !== 'touch') inspect(event); });
+  canvas.addEventListener('click', inspect);
+  canvas.addEventListener('keydown', event => {
+    const model = chartModels.get(key);
+    if (!model?.total) return;
+    const next = { ArrowLeft: model.selected - 1, ArrowRight: model.selected + 1, Home: 0, End: model.records.length - 1 };
+    if (Object.hasOwn(next, event.key)) { event.preventDefault(); selectChartPoint(model, next[event.key]); }
+  });
+}
+for (const button of document.querySelectorAll('[data-table]')) {
+  button.addEventListener('click', () => {
+    const model = chartModels.get(button.dataset.table);
+    if (!model) return;
+    tablePages.set(model.key, (tablePages.get(model.key) || 0) + Number(button.dataset.page));
+    renderChartTable(model);
+  });
+}
+for (const button of document.querySelectorAll('[data-view]')) button.addEventListener('click', () => setView(button.dataset.view));
+document.querySelector('.view-tabs').addEventListener('keydown', event => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key) || !loaded) return;
+  event.preventDefault();
+  const view = event.key === 'Home' ? 'timeline' : event.key === 'End' ? 'charts' : activeView === 'timeline' ? 'charts' : 'timeline';
+  setView(view);
+  $(`${view}Tab`).focus();
+});
+$('chartPeriod').addEventListener('change', () => { chartPeriod = $('chartPeriod').value; queueCharts(); });
+$('chartScope').addEventListener('change', () => { chartScope = $('chartScope').value; queueCharts(); });
+for (const input of [$('chartFrom'), $('chartTo')]) input.addEventListener('change', queueCharts);
+for (const button of document.querySelectorAll('[data-chart-range]')) {
+  button.addEventListener('click', () => {
+    const first = Math.min(...states.map(state => state.openedDay));
+    const today = Math.floor(now / DAY) * DAY;
+    const start = button.dataset.chartRange === 'year' ? Date.UTC(new Date(now).getUTCFullYear(), 0, 1) : button.dataset.chartRange === 'recent' ? today - 89 * DAY : first;
+    $('chartFrom').value = dateValue(Math.max(first, start));
+    $('chartTo').value = dateValue(today);
+    queueCharts();
+  });
+}
+const chartsObserver = new ResizeObserver(entries => {
+  const width = entries[0].contentRect.width;
+  if (width === chartsWidth) return;
+  chartsWidth = width;
+  queueCharts();
+});
+chartsObserver.observe($('chartsView'));
 
 initialize();
