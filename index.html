@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#1b2b40">
+    <meta name="description" content="Compare Whiteout Survival states, hero progression, and hero generations on one timeline.">
+    <title>State Timeline · Whiteout Survival</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2064%2064'%3E%3Crect%20width='64'%20height='64'%20rx='8'%20fill='%23304a67'/%3E%3Cpath%20d='M32%2011v42M14%2022l36%2020M14%2042l36-20'%20fill='none'%20stroke='%23bcd8f1'%20stroke-width='4'%20stroke-linecap='round'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <svg class="icon-library" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <symbol id="icon-snow" viewBox="0 0 24 24"><path d="M12 2v20M3.34 7l17.32 10M3.34 17 20.66 7M9 4l3 3 3-3M9 20l3-3 3 3M3.6 10.6l4.1-1.1-1.1-4.1M20.4 13.4l-4.1 1.1 1.1 4.1M6.6 18.6l1.1-4.1-4.1-1.1M17.4 5.4l-1.1 4.1 4.1 1.1"/></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></symbol>
+      <symbol id="icon-pin" viewBox="0 0 24 24"><path d="m8 3 8 0-1 6 4 4v2H5v-2l4-4-1-6ZM12 15v6"/></symbol>
+      <symbol id="icon-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M7 3v4M17 3v4M3 11h18M8 15h2M14 15h2"/></symbol>
+      <symbol id="icon-flag" viewBox="0 0 24 24"><path d="M5 21V3m0 1c5-4 9 4 14 0v10c-5 4-9-4-14 0"/></symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></symbol>
+      <symbol id="icon-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M5 12h14M12 5v14"/></symbol>
+      <symbol id="icon-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
+      <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
+    </svg>
+    <main class="app">
+      <header class="app-header">
+        <div class="brand">
+          <div class="brand-mark"><svg class="icon" aria-hidden="true"><use href="#icon-snow"/></svg></div>
+          <div><p class="eyebrow">WHITEOUT SURVIVAL</p><h1>State<span>/</span>Timeline</h1><p class="intro">Compare state progress and see what unlocks next.</p></div>
+        </div>
+        <div class="today-summary">
+          <span class="live-label"><span class="status-dot"></span>TODAY · UTC</span>
+          <time id="todayDate">—</time>
+          <span id="globalDay">Loading timeline…</span>
+        </div>
+      </header>
+
+      <section class="controls" aria-label="Timeline controls">
+        <fieldset id="timelineControls" disabled>
+          <div class="control-main">
+            <form id="stateFilterForm" class="state-search" role="search">
+              <label class="sr-only" for="stateFilterInput">Find states by number or range</label>
+              <svg class="icon search-icon" aria-hidden="true"><use href="#icon-search"/></svg>
+              <input id="stateFilterInput" type="search" placeholder="Find states, e.g. 4, 3175 or 1000–1020" autocomplete="off" maxlength="500" aria-describedby="filterFeedback">
+              <button class="button button-primary" type="submit" id="stateFilterBtn">Show states<svg class="icon" aria-hidden="true"><use href="#icon-arrow"/></svg></button>
+            </form>
+            <div class="day-toggle" role="group" aria-label="Day display">
+              <button type="button" data-mode="timeline" aria-pressed="true"><svg class="icon" aria-hidden="true"><use href="#icon-calendar"/></svg>Timeline Day</button>
+              <button type="button" data-mode="progression" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#icon-flag"/></svg>Progression Day</button>
+            </div>
+          </div>
+          <div class="control-secondary">
+            <div class="quick-filters" role="group" aria-label="State shortcuts">
+              <button type="button" id="allStatesBtn" class="filter-chip" aria-pressed="true">All states</button>
+              <button type="button" id="recentStatesBtn" class="filter-chip" aria-pressed="false">Newest</button>
+              <button type="button" id="pinnedOnlyBtn" class="filter-chip" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#icon-pin"/></svg>Pinned<span id="pinnedCount">0</span></button>
+            </div>
+            <div class="view-controls">
+              <button type="button" id="todayBtn" class="button button-subtle"><svg class="icon" aria-hidden="true"><use href="#icon-target"/></svg>Today</button>
+              <div class="zoom-controls" role="group" aria-label="Timeline zoom">
+                <button type="button" id="zoomOutBtn" class="icon-button" aria-label="Zoom out"><svg class="icon" aria-hidden="true"><use href="#icon-minus"/></svg></button>
+                <output id="zoomLabel" aria-live="off">120 days</output>
+                <button type="button" id="zoomInBtn" class="icon-button" aria-label="Zoom in"><svg class="icon" aria-hidden="true"><use href="#icon-plus"/></svg></button>
+              </div>
+              <button type="button" id="resetViewBtn" class="button button-subtle">Reset view</button>
+            </div>
+          </div>
+        </fieldset>
+        <p id="filterFeedback" class="filter-feedback" role="status" hidden></p>
+      </section>
+
+      <section class="timeline-card" aria-labelledby="timelineTitle">
+        <div class="chart-heading">
+          <div><h2 id="timelineTitle">Hero generations</h2><p id="modeHelp">States share the same calendar. The copper line marks today.</p></div>
+          <div class="chart-legend"><span><i class="legend-band"></i>Current generation</span><span><i class="legend-line"></i>Today</span></div>
+        </div>
+        <div class="timeline-shell">
+          <div id="timelineViewport" class="gen-container" tabindex="0" role="region" aria-label="State timeline. Scroll horizontally for dates and vertically for states.">
+            <div id="timelineSurface" class="timeline-surface" hidden>
+              <div class="gen-header">
+                <div class="axis-corner"><span>STATE / PROGRESS</span><strong id="stateCount">—</strong></div>
+                <div id="timelineRuler" class="gen-ruler" aria-hidden="true"></div>
+              </div>
+              <div id="pinnedRows" class="pinned-rows" aria-label="Pinned states"></div>
+              <div id="stateRows" class="gen-body" aria-label="States"></div>
+            </div>
+          </div>
+          <div id="todayLine" class="gen-today-line" hidden aria-hidden="true"></div>
+          <div id="emptyState" class="empty-state" role="status">
+            <div class="empty-icon"><svg class="icon" aria-hidden="true"><use href="#icon-snow"/></svg></div>
+            <h3 id="emptyTitle">Getting your timeline ready</h3>
+            <p id="emptyMessage">Loading state opening dates and hero generations…</p>
+            <button id="emptyAction" class="button button-primary" type="button" hidden>Show all states</button>
+          </div>
+        </div>
+        <footer class="chart-footer"><span id="viewRange">Opening the timeline…</span><span class="navigation-hint">Drag to explore<span> · </span>Tap a generation for its heroes</span></footer>
+      </section>
+      <footer class="app-footer"><span id="dataSummary">State opening dates from the game</span><span>Progression days follow the hero-release schedule.</span></footer>
+    </main>
+
+    <dialog id="heroDialog" class="hero-dialog" aria-labelledby="heroDialogTitle">
+      <div class="dialog-top"><span id="heroDialogKicker" class="eyebrow">STATE</span><button id="closeDialogBtn" class="icon-button" type="button" aria-label="Close hero details"><svg class="icon" aria-hidden="true"><use href="#icon-close"/></svg></button></div>
+      <h2 id="heroDialogTitle">Generation</h2>
+      <p id="heroDialogTiming" class="dialog-timing"></p>
+      <p class="dialog-label">HEROES IN THIS GENERATION</p>
+      <ul id="heroList" class="hero-list"></ul>
+      <div id="heroDialogState" class="dialog-state"></div>
+      <button id="dialogTodayBtn" type="button" class="button button-primary dialog-jump"><svg class="icon" aria-hidden="true"><use href="#icon-target"/></svg>Jump to this state’s today</button>
+    </dialog>
+    <div id="timelineTooltip" class="timeline-tooltip" role="tooltip" hidden></div>
+    <script type="module" src="script.js"></script>
+  </body>
+</html>
